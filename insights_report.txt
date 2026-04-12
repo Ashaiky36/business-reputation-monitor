@@ -1,0 +1,37 @@
+
+BUSINESS REPUTATION INSIGHTS REPORT
+Generated: 2026-04-12 14:07:46
+============================================================
+
+SUMMARY STATISTICS
+-----------------
+Total Negative Reviews Analyzed: 19
+Sarcastic Negative Reviews: 2
+
+KEY PROBLEMS IDENTIFIED
+----------------------
+
+1. Poor customer service
+   SUGGESTED ACTION: Improve training for customer service representatives to enhance knowledge and communication skills, provide multiple contact channels for customers, and implement a system for tracking and addressing customer complaints.
+
+2. Overcharging and lack of refund
+   SUGGESTED ACTION: Review the pricing structure for subscriptions and ensure transparency in costs to customers. Offer a clear and easy-to-use refund process for overcharged customers.
+
+3. Technical issues with devices
+   SUGGESTED ACTION: Ensure quality control of devices before selling, provide adequate technical support for customers experiencing issues with their devices.
+
+SEVERITY LEVELS
+------------------------------
+Problem 1: High Severity
+Problem 2: High Severity
+Problem 3: Medium Severity
+
+============================================================
+ACTION ITEMS
+-----------
+1. Prioritize issues based on severity levels
+2. Implement suggested solutions within 2 weeks
+3. Monitor future reviews for improvement
+4. Respond to negative reviews professionally
+
+END OF REPORT

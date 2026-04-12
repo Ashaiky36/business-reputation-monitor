@@ -1,0 +1,17 @@
+{
+  "problems": [
+    "Unable to analyze reviews due to technical issue",
+    "Please check Ollama connection",
+    "Review data may need verification"
+  ],
+  "suggestions": [
+    "Run the sentiment analyzer again",
+    "Verify Ollama is running: 'ollama list'",
+    "Check CSV file format and content"
+  ],
+  "severity": [
+    "High",
+    "Medium",
+    "Low"
+  ]
+}

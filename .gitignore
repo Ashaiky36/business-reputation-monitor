@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+env/
+.env
+
+# Data files (optional - commit sample data but not all)
+# *.csv
+# !sample_reviews.csv
+# *.pdf
+
+# Local models (too large)
+models/
+*.bin
+*.safetensors
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local email server data
+mailhog.exe

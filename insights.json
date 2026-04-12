@@ -1,0 +1,17 @@
+{
+  "problems": [
+    "Poor customer service",
+    "Overcharging and lack of refund",
+    "Technical issues with devices"
+  ],
+  "suggestions": [
+    "Improve training for customer service representatives to enhance knowledge and communication skills, provide multiple contact channels for customers, and implement a system for tracking and addressing customer complaints.",
+    "Review the pricing structure for subscriptions and ensure transparency in costs to customers. Offer a clear and easy-to-use refund process for overcharged customers.",
+    "Ensure quality control of devices before selling, provide adequate technical support for customers experiencing issues with their devices."
+  ],
+  "severity": [
+    "High",
+    "High",
+    "Medium"
+  ]
+}
