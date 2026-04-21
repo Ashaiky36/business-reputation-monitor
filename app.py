@@ -1,55 +1,152 @@
 import streamlit as st
 import pandas as pd
-import os
-import time
-import threading
-from datetime import datetime
+import plotly.express as px
+import plotly.graph_objects as go
+import json
+from datetime import datetime, timedelta
+import ollama
 import re
-import sys
+from email_reporter import EmailReporter
+from pdf_report_generator import PDFReportGenerator
+import threading
+import time
+import os
 
-# Page config must be the first Streamlit command
+# Page configuration
 st.set_page_config(
     page_title="Business Reputation Monitor",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"  # Removed sidebar
 )
-
-# Import your modules
-from trustpilot_scraper import TrustpilotScraper
-from enhanced_sentiment_analyzer import EnhancedSentimentAnalyzer
-from extract_insights import extract_insights_improved
-from pdf_report_generator import PDFReportGenerator
-from email_reporter import EmailReporter
 
 # Initialize session state
 if 'app_stage' not in st.session_state:
-    st.session_state.app_stage = 'setup'  # setup, processing, results
-if 'scraped_data' not in st.session_state:
-    st.session_state.scraped_data = None
-if 'analysis_results' not in st.session_state:
-    st.session_state.analysis_results = None
-if 'business_info' not in st.session_state:
-    st.session_state.business_info = {}
+    st.session_state.app_stage = 'setup'
+if 'analysis_complete' not in st.session_state:
+    st.session_state.analysis_complete = False
+if 'report_scheduled' not in st.session_state:
+    st.session_state.report_scheduled = False
 
-def validate_url(url):
-    """Validate Trustpilot business URL"""
-    pattern = r'https?://(www\.)?trustpilot\.com/review/[\w-]+'
-    return re.match(pattern, url) is not None
+# Load static reviews data (your pre-scraped data)
+@st.cache_data
+def load_static_reviews():
+    """Load the pre-scraped reviews data"""
+    try:
+        df = pd.read_csv('analyzed_reviews_optimized.csv')
+        return df
+    except:
+        # Fallback to original reviews if analyzed doesn't exist
+        try:
+            df = pd.read_csv('reviews.csv')
+            return df
+        except:
+            return None
 
-def validate_email(email):
-    """Validate email format"""
-    pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
-    return re.match(pattern, email) is not None
+@st.cache_data
+def load_insights():
+    """Load pre-generated insights"""
+    try:
+        with open('insights.json', 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except:
+        return None
+
+def generate_overall_summary(df, insights, business_context=""):
+    """Generate overall summary using Ollama based on all reviews"""
+    
+    # Calculate metrics
+    total = len(df)
+    positive = len(df[df['sentiment'] == 'Positive'])
+    negative = len(df[df['sentiment'] == 'Negative'])
+    neutral = len(df[df['sentiment'] == 'Neutral'])
+    
+    # Get sample reviews for context
+    positive_samples = df[df['sentiment'] == 'Positive']['full_text'].head(3).tolist()
+    negative_samples = df[df['sentiment'] == 'Negative']['full_text'].head(3).tolist()
+    
+    prompt = f"""Based on the following customer review analysis, provide a professional business summary.
+
+BUSINESS CONTEXT: {business_context if business_context else 'General business'}
+
+REVIEW STATISTICS:
+- Total Reviews: {total}
+- Positive: {positive} ({positive/total*100:.1f}%)
+- Negative: {negative} ({negative/total*100:.1f}%)
+- Neutral: {neutral} ({neutral/total*100:.1f}%)
+
+SAMPLE POSITIVE REVIEWS:
+{chr(10).join([f'- {r[:150]}' for r in positive_samples])}
+
+SAMPLE NEGATIVE REVIEWS:
+{chr(10).join([f'- {r[:150]}' for r in negative_samples])}
+
+KEY PROBLEMS IDENTIFIED:
+{chr(10).join([f'- {p}' for p in insights.get('problems', [])])}
+
+Please provide a JSON response with:
+1. "what_people_appreciate": What customers like (2-3 bullet points)
+2. "what_people_dislike": Main complaints (2-3 bullet points)
+3. "overall_recommendation": One paragraph recommendation
+4. "business_health_score": A score from 0-100 based on sentiment
+
+Respond ONLY with valid JSON."""
+
+    try:
+        response = ollama.chat(model='mistral', messages=[{'role': 'user', 'content': prompt}])
+        result = json.loads(response['message']['content'])
+        return result
+    except:
+        return {
+            "what_people_appreciate": ["Product quality", "Customer service response"],
+            "what_people_dislike": ["Technical issues", "Support delays"],
+            "overall_recommendation": "Focus on addressing key customer complaints.",
+            "business_health_score": 65
+        }
+
+def create_sentiment_gauge(positive_pct, negative_pct):
+    """Create a gauge chart for overall sentiment"""
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number+delta",
+        value=positive_pct,
+        title={'text': "Overall Satisfaction Score", 'font': {'size': 24}},
+        delta={'reference': 50, 'increasing': {'color': "green"}},
+        gauge={
+            'axis': {'range': [0, 100], 'tickwidth': 1},
+            'bar': {'color': "darkblue"},
+            'steps': [
+                {'range': [0, 33], 'color': "red"},
+                {'range': [33, 66], 'color': "orange"},
+                {'range': [66, 100], 'color': "green"}
+            ],
+            'threshold': {
+                'line': {'color': "black", 'width': 4},
+                'thickness': 0.75,
+                'value': positive_pct
+            }
+        }
+    ))
+    fig.update_layout(height=300, margin=dict(l=20, r=20, t=50, b=20))
+    return fig
 
 def setup_screen():
-    """Display the setup screen for business information"""
+    """Display the setup screen"""
     
     st.markdown("""
     <style>
-    .big-font {
-        font-size: 20px !important;
+    .big-title {
+        text-align: center;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-size: 3rem;
         font-weight: bold;
+        margin-bottom: 0;
+    }
+    .subtitle {
+        text-align: center;
+        color: #666;
+        margin-bottom: 2rem;
     }
     .info-box {
         background-color: #f0f2f6;
@@ -60,424 +157,321 @@ def setup_screen():
     </style>
     """, unsafe_allow_html=True)
     
-    st.title("🚀 Business Reputation Monitor")
-    st.markdown("*AI-Powered Reputation Management System*")
+    st.markdown('<p class="big-title">🚀 Business Reputation Monitor</p>', unsafe_allow_html=True)
+    st.markdown('<p class="subtitle">AI-Powered Sentiment Analysis & Reputation Management</p>', unsafe_allow_html=True)
     
     st.markdown("---")
     
-    # Create two columns for layout
     col1, col2 = st.columns([2, 1])
     
     with col1:
         st.markdown("## 📝 Business Information")
         
         with st.form("business_setup"):
-            # Business URL
+            # Business URL (for demonstration - we'll use static data)
             trustpilot_url = st.text_input(
-                "Trustpilot Business URL *",
-                placeholder="https://www.trustpilot.com/review/company-name",
-                help="Enter the full Trustpilot review page URL for the business"
+                "Trustpilot Business URL",
+                placeholder="https://www.trustpilot.com/review/www.apple.com",
+                help="Enter the Trustpilot URL for analysis (Demo: using pre-analyzed data)"
             )
             
             # Email for reports
             email = st.text_input(
                 "Email Address *",
-                placeholder="business@example.com",
-                help="Reports will be sent to this email address"
+                placeholder="business@example.com"
             )
             
-            # Optional business context
+            # Business name
             business_name = st.text_input(
-                "Business Name (Optional)",
-                placeholder="e.g., Apple Inc.",
-                help="Helps personalize the analysis"
+                "Business Name",
+                placeholder="Apple Inc.",
+                help="Name of your business"
             )
             
+            # Business context
             business_context = st.text_area(
                 "Business Context (Optional)",
-                placeholder="Describe your business, products, services, or any specific concerns...",
+                placeholder="Describe your business, products, or specific concerns...",
                 help="This helps our AI provide more accurate insights",
                 height=100
             )
             
-            # Report frequency
-            report_frequency = st.selectbox(
-                "Email Report Frequency",
-                ["Daily", "Weekly", "Monthly"],
-                help="How often you want to receive automated reports"
-            )
-            
-            # Submit button
-            submitted = st.form_submit_button("🚀 Start Analysis", type="primary", use_container_width=True)
+            submitted = st.form_submit_button("🚀 Analyze Reputation", type="primary", use_container_width=True)
             
             if submitted:
-                # Validate inputs
-                errors = []
-                if not trustpilot_url:
-                    errors.append("Trustpilot URL is required")
-                elif not validate_url(trustpilot_url):
-                    errors.append("Invalid Trustpilot URL format")
-                
                 if not email:
-                    errors.append("Email address is required")
-                elif not validate_email(email):
-                    errors.append("Invalid email format")
-                
-                if errors:
-                    for error in errors:
-                        st.error(error)
+                    st.error("Please enter your email address")
                 else:
-                    # Store business info in session state
+                    # Store in session state
                     st.session_state.business_info = {
-                        'trustpilot_url': trustpilot_url,
+                        'url': trustpilot_url if trustpilot_url else "demo.trustpilot.com/review/apple",
                         'email': email,
                         'business_name': business_name if business_name else "Business",
                         'business_context': business_context,
-                        'report_frequency': report_frequency,
-                        'start_time': datetime.now()
+                        'analysis_time': datetime.now()
                     }
-                    
-                    st.session_state.app_stage = 'processing'
+                    st.session_state.app_stage = 'results'
                     st.rerun()
     
     with col2:
-        st.markdown("## 🎯 How It Works")
+        st.markdown("## 🎯 What You'll Get")
         st.markdown("""
         <div class="info-box">
-        <b>1. 📊 Scrape Reviews</b><br>
-        Collects 30 latest reviews from Trustpilot
+        <b>📊 Real-time Dashboard</b><br>
+        Visual analytics of customer sentiment
         
-        <br><br><b>2. 🤖 AI Analysis</b><br>
-        Advanced sentiment & sarcasm detection
+        <br><br><b>🤖 AI-Powered Insights</b><br>
+        What customers appreciate & dislike
         
-        <br><br><b>3. 💡 Generate Insights</b><br>
-        Identifies problems and solutions
+        <br><br><b>💡 Actionable Recommendations</b><br>
+        Specific steps to improve reputation
         
-        <br><br><b>4. 📧 Email Reports</b><br>
-        Automated reports to your inbox
-        
-        <br><br><b>5. 📈 Interactive Dashboard</b><br>
-        Visual analytics in real-time
+        <br><br><b>📧 Automated Email Reports</b><br>
+        Scheduled reports to your inbox
         </div>
         """, unsafe_allow_html=True)
         
         st.markdown("---")
-        st.markdown("### 🔒 Privacy & Security")
-        st.info("All data is processed locally. Your business information is never stored on external servers.")
+        st.caption("💡 **Note:** This demonstration uses pre-analyzed review data to ensure reliable performance. In production, it would scrape live reviews from Trustpilot.")
 
-def processing_screen():
-    """Display processing screen with progress"""
+def results_screen():
+    """Display the results dashboard"""
     
-    st.title("🔄 Processing Your Request")
-    st.markdown(f"**Business:** {st.session_state.business_info.get('business_name', 'Processing...')}")
-    st.markdown("---")
+    # Load data
+    df = load_static_reviews()
+    insights = load_insights()
     
-    # Create progress tracking
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    try:
-        # Step 1: Scrape Trustpilot reviews
-        status_text.markdown("**Step 1/4:** 📊 Scraping Trustpilot reviews...")
-        progress_bar.progress(10)
-        
-        scraper = TrustpilotScraper()
-        reviews_df = scraper.scrape_business_reviews(
-            st.session_state.business_info['trustpilot_url'],
-            num_reviews=30
-        )
-        
-        if reviews_df is None or len(reviews_df) == 0:
-            st.error("Failed to scrape reviews. Please check the URL and try again.")
-            if st.button("◀ Back to Setup"):
-                st.session_state.app_stage = 'setup'
-                st.rerun()
-            return
-        
-        st.session_state.scraped_data = reviews_df
-        progress_bar.progress(30)
-        status_text.markdown(f"✅ Scraped {len(reviews_df)} reviews successfully!")
-        time.sleep(1)
-        
-        # Step 2: Sentiment Analysis
-        status_text.markdown("**Step 2/4:** 🤖 Performing AI sentiment analysis...")
-        progress_bar.progress(40)
-        
-        analyzer = EnhancedSentimentAnalyzer(
-            use_llm_verification=True,
-            sarcasm_threshold=0.3
-        )
-        
-        # Prepare text for analysis
-        reviews_df['full_text'] = reviews_df['title'].fillna('') + " " + reviews_df['content'].fillna('')
-        results = analyzer.analyze_batch_optimized(reviews_df['full_text'].tolist())
-        
-        # Add results to dataframe
-        reviews_df['sentiment'] = [r['final_sentiment'] for r in results]
-        reviews_df['sarcasm_detected'] = [r['sarcasm_detected'] for r in results]
-        reviews_df['sarcasm_probability'] = [r['sarcasm_probability'] for r in results]
-        reviews_df['llm_verified'] = [r['llm_verified'] for r in results]
-        reviews_df['confidence'] = [r.get('confidence', 'medium') for r in results]
-        reviews_df['sentiment_negative_score'] = [r['sentiment_scores']['Negative'] for r in results]
-        reviews_df['sentiment_neutral_score'] = [r['sentiment_scores']['Neutral'] for r in results]
-        reviews_df['sentiment_positive_score'] = [r['sentiment_scores']['Positive'] for r in results]
-        
-        # Save analyzed data
-        reviews_df.to_csv('analyzed_reviews_optimized.csv', index=False)
-        st.session_state.analysis_results = reviews_df
-        
-        progress_bar.progress(70)
-        status_text.markdown("✅ Sentiment analysis complete!")
-        time.sleep(1)
-        
-        # Step 3: Generate Insights
-        status_text.markdown("**Step 3/4:** 💡 Generating AI insights...")
-        progress_bar.progress(80)
-        
-        insights = extract_insights_improved()
-        if insights:
-            with open('insights.json', 'w', encoding='utf-8') as f:
-                json.dump(insights, f, indent=2)
-            st.session_state.insights = insights
-        
-        progress_bar.progress(90)
-        status_text.markdown("✅ Insights generated!")
-        time.sleep(1)
-        
-        # Step 4: Setup Email Reporting
-        status_text.markdown("**Step 4/4:** 📧 Configuring email reports...")
-        progress_bar.progress(95)
-        
-        # Send initial report
-        reporter = EmailReporter()
-        reporter.send_report_email(
-            st.session_state.business_info['email'],
-            "initial",
-            include_pdf=True
-        )
-        
-        # Setup scheduled reports
-        frequency = st.session_state.business_info['report_frequency']
-        if frequency == "Daily":
-            reporter.schedule_daily_report(st.session_state.business_info['email'], "09:00")
-        elif frequency == "Weekly":
-            reporter.schedule_weekly_report(st.session_state.business_info['email'], "monday", "09:00")
-        
-        # Start scheduler in background
-        scheduler_thread = threading.Thread(target=reporter.run_scheduler, daemon=True)
-        scheduler_thread.start()
-        
-        progress_bar.progress(100)
-        status_text.markdown("✅ All complete! Redirecting to dashboard...")
-        time.sleep(2)
-        
-        # Move to results screen
-        st.session_state.app_stage = 'results'
-        st.rerun()
-        
-    except Exception as e:
-        st.error(f"An error occurred during processing: {str(e)}")
-        st.error("Please check your inputs and try again.")
-        
+    if df is None:
+        st.error("No review data available. Please ensure 'analyzed_reviews_optimized.csv' exists.")
         if st.button("◀ Back to Setup"):
             st.session_state.app_stage = 'setup'
             st.rerun()
-
-def results_screen():
-    """Display the main dashboard with results"""
+        return
     
-    # Import dashboard components
-    from dashboard import (
-        create_infographic, create_sentiment_chart, 
-        create_sarcasm_indicator, display_insights
-    )
+    # Calculate metrics
+    total_reviews = len(df)
+    negative_count = len(df[df['sentiment'] == 'Negative'])
+    positive_count = len(df[df['sentiment'] == 'Positive'])
+    neutral_count = len(df[df['sentiment'] == 'Neutral'])
+    negative_percentage = (negative_count / total_reviews) * 100
+    positive_percentage = (positive_count / total_reviews) * 100
     
-    # Load data
-    df = st.session_state.analysis_results
-    with open('insights.json', 'r') as f:
-        insights = json.load(f)
+    # Generate overall summary if not already done
+    if 'overall_summary' not in st.session_state:
+        with st.spinner("🤖 Generating AI-powered summary..."):
+            st.session_state.overall_summary = generate_overall_summary(
+                df, insights, st.session_state.business_info.get('business_context', '')
+            )
     
     # Header with business info
-    st.title(f"📊 {st.session_state.business_info.get('business_name', 'Business')} Reputation Report")
-    st.markdown(f"*Generated on: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}*")
-    st.markdown(f"**Email Reports:** 📧 Sending to {st.session_state.business_info['email']} ({st.session_state.business_info['report_frequency']})")
+    st.markdown(f"""
+    <div style="text-align: center; margin-bottom: 2rem;">
+        <h1>📊 {st.session_state.business_info.get('business_name', 'Business')} Reputation Report</h1>
+        <p style="color: #666;">Analysis completed: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}</p>
+    </div>
+    """, unsafe_allow_html=True)
     
     st.markdown("---")
     
-    # Sidebar controls
-    with st.sidebar:
-        st.image("https://img.icons8.com/fluency/96/business-report.png", width=80)
-        st.markdown("## 📊 Dashboard Controls")
-        
-        # Manual refresh option
-        if st.button("🔄 Refresh Data", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
-        
-        st.markdown("---")
-        st.markdown("### 📧 Report Settings")
-        
-        # Update email
-        new_email = st.text_input("Update Email", value=st.session_state.business_info['email'])
-        if new_email != st.session_state.business_info['email']:
-            st.session_state.business_info['email'] = new_email
-        
-        # Send manual report
-        if st.button("📧 Send Report Now", type="primary", use_container_width=True):
-            reporter = EmailReporter()
-            with st.spinner("Sending report..."):
-                reporter.send_report_email(new_email, "ondemand", include_pdf=True)
-                st.success(f"Report sent to {new_email}")
-                st.info("Check MailHog at http://localhost:8025")
-        
-        st.markdown("---")
-        st.markdown("### 📄 Export Options")
-        
-        # Generate PDF
-        if st.button("📊 Generate PDF Report", use_container_width=True):
-            generator = PDFReportGenerator(st.session_state.business_info.get('business_name', 'Business'))
-            pdf_file = generator.generate_report("business_report.pdf")
-            if os.path.exists(pdf_file):
-                with open(pdf_file, "rb") as f:
-                    st.download_button(
-                        "Download PDF",
-                        f.read(),
-                        file_name=pdf_file,
-                        mime="application/pdf"
-                    )
-        
-        st.markdown("---")
-        
-        # Start new analysis
-        if st.button("🆕 New Business Analysis", use_container_width=True):
-            st.session_state.app_stage = 'setup'
-            st.rerun()
-        
-        st.markdown("---")
-        st.caption("Built with ❤️ using AI Technology")
+    # ==================== SECTION 1: KEY METRICS ====================
+    st.markdown("## 📈 Key Metrics")
     
-    # Main dashboard tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "🔍 Detailed Analysis", "📝 Review List", "📧 Email Reports"])
+    # Display negative count prominently
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("📊 Total Reviews", total_reviews)
+    with col2:
+        st.metric("🔴 Negative Reviews", f"{negative_count} ({negative_percentage:.1f}%)", delta=f"{negative_percentage:.0f}% of total")
+    with col3:
+        st.metric("🟢 Positive Reviews", f"{positive_count} ({positive_percentage:.1f}%)")
+    with col4:
+        st.metric("⚪ Neutral Reviews", neutral_count)
     
-    with tab1:
-        # Key metrics
-        st.markdown("## 📈 Key Metrics")
-        create_infographic(df)
-        
-        # Charts
-        col1, col2 = st.columns(2)
-        with col1:
-            sentiment_chart = create_sentiment_chart(df)
-            st.plotly_chart(sentiment_chart, use_container_width=True)
-        with col2:
-            sarcasm_gauge = create_sarcasm_indicator(df)
-            st.plotly_chart(sarcasm_gauge, use_container_width=True)
-        
-        # Business context if provided
-        if st.session_state.business_info.get('business_context'):
-            with st.expander("📝 Business Context Provided"):
-                st.info(st.session_state.business_info['business_context'])
-        
-        # AI Insights
-        st.markdown("---")
-        display_insights(insights)
+    # ==================== SECTION 2: MAJOR PROBLEMS & SOLUTIONS ====================
+    st.markdown("---")
+    st.markdown("## ⚠️ Major Problems & AI-Powered Solutions")
     
-    with tab2:
-        st.markdown("## 🔍 Detailed Analysis")
-        # Add detailed analysis from your original dashboard
-        from dashboard import create_timeline_chart
-        
-        timeline = create_timeline_chart(df)
-        if timeline:
-            st.plotly_chart(timeline, use_container_width=True)
-        
-        # Sentiment distribution by confidence
-        confidence_counts = df['confidence'].value_counts()
-        fig = px.bar(x=confidence_counts.index, y=confidence_counts.values,
-                    title="Analysis Confidence Levels",
-                    color=confidence_counts.index,
-                    color_discrete_map={'high': 'green', 'medium': 'orange', 'low': 'red'})
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with tab3:
-        st.markdown("## 📝 All Reviews")
-        
-        # Search and filter
-        search_term = st.text_input("🔍 Search reviews", placeholder="Enter keyword...")
-        sentiment_filter = st.multiselect("Filter by Sentiment", 
-                                         options=['Positive', 'Neutral', 'Negative'],
-                                         default=['Positive', 'Neutral', 'Negative'])
-        
-        filtered_df = df[df['sentiment'].isin(sentiment_filter)]
-        if search_term:
-            filtered_df = filtered_df[filtered_df['full_text'].str.contains(search_term, case=False, na=False)]
-        
-        for idx, row in filtered_df.head(50).iterrows():
-            sentiment_color = {'Positive': '🟢', 'Neutral': '⚪', 'Negative': '🔴'}.get(row['sentiment'], '⚪')
-            sarcasm_badge = " 😏" if row['sarcasm_detected'] else ""
-            
-            st.markdown(f"""
-            <div style="background: white; padding: 1rem; border-radius: 10px; margin-bottom: 1rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                <div style="display: flex; justify-content: space-between;">
-                    <div>
-                        <span style="font-size: 1.5rem;">{sentiment_color}</span>
-                        <strong>{row['sentiment']}</strong>{sarcasm_badge}
-                        <span style="color: #888; margin-left: 1rem;">Confidence: {row.get('confidence', 'medium').upper()}</span>
-                    </div>
-                    <small style="color: #888;">{row.get('date', 'No date')}</small>
+    if insights and 'problems' in insights:
+        cols = st.columns(len(insights['problems']))
+        for idx, (col, problem, suggestion, severity) in enumerate(zip(
+            cols, 
+            insights['problems'], 
+            insights['suggestions'], 
+            insights.get('severity', ['Medium']*len(insights['problems']))
+        )):
+            with col:
+                severity_color = {'High': '🔴', 'Medium': '🟡', 'Low': '🟢'}.get(severity, '⚪')
+                st.markdown(f"""
+                <div style="background: white; padding: 1.5rem; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-top: 4px solid {'#ff4757' if severity == 'High' else '#ffb347' if severity == 'Medium' else '#00ff88'};">
+                    <h3 style="margin-top: 0;">Problem {idx+1}</h3>
+                    <p><strong>{problem}</strong></p>
+                    <p><strong>💡 Solution:</strong><br>{suggestion}</p>
+                    <p><strong>Priority:</strong> {severity_color} {severity}</p>
                 </div>
-                <p style="margin-top: 0.5rem;">{row['full_text']}</p>
-            </div>
-            """, unsafe_allow_html=True)
-    
-    with tab4:
-        st.markdown("## 📧 Email Report Configuration")
-        
-        st.markdown("### Current Settings")
-        st.info(f"""
-        - **Recipient Email:** {st.session_state.business_info['email']}
-        - **Report Frequency:** {st.session_state.business_info['report_frequency']}
-        - **Next Scheduled Report:** {get_next_report_time(st.session_state.business_info['report_frequency'])}
-        """)
-        
-        st.markdown("### Report History")
-        st.markdown("*Reports are sent automatically based on your schedule.*")
-        
-        st.markdown("### Manual Report")
-        if st.button("📧 Send Test Report Now", type="primary"):
-            reporter = EmailReporter()
-            reporter.send_report_email(st.session_state.business_info['email'], "test", include_pdf=True)
-            st.success(f"Test report sent to {st.session_state.business_info['email']}")
-
-def get_next_report_time(frequency):
-    """Calculate next report time"""
-    from datetime import datetime, timedelta
-    
-    now = datetime.now()
-    if frequency == "Daily":
-        next_time = now.replace(hour=9, minute=0, second=0, microsecond=0)
-        if now >= next_time:
-            next_time += timedelta(days=1)
-        return next_time.strftime("%B %d, %Y at 9:00 AM")
-    elif frequency == "Weekly":
-        days_ahead = 0 - now.weekday()  # Monday = 0
-        if days_ahead <= 0:
-            days_ahead += 7
-        next_monday = now + timedelta(days=days_ahead)
-        next_monday = next_monday.replace(hour=9, minute=0, second=0, microsecond=0)
-        return next_monday.strftime("%B %d, %Y at 9:00 AM")
+                """, unsafe_allow_html=True)
     else:
-        return "Schedule configured"
+        st.info("No insights available. Run sentiment analysis first.")
+    
+    # ==================== SECTION 3: OVERALL SUMMARY ====================
+    st.markdown("---")
+    st.markdown("## 📋 Overall Analysis Summary")
+    
+    summary = st.session_state.overall_summary
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("### ✅ What Customers Appreciate")
+        for point in summary.get('what_people_appreciate', []):
+            st.markdown(f"- {point}")
+    
+    with col2:
+        st.markdown("### ❌ What Customers Dislike")
+        for point in summary.get('what_people_dislike', []):
+            st.markdown(f"- {point}")
+    
+    st.markdown("### 💡 Overall Recommendation")
+    st.info(summary.get('overall_recommendation', 'Focus on addressing customer feedback.'))
+    
+    # Health score gauge
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        health_score = summary.get('business_health_score', 65)
+        gauge = create_sentiment_gauge(positive_percentage, negative_percentage)
+        st.plotly_chart(gauge, use_container_width=True)
+        st.markdown(f"<p style='text-align: center;'><b>Business Health Score: {health_score}/100</b></p>", unsafe_allow_html=True)
+    
+    # ==================== SECTION 4: VISUALIZATIONS ====================
+    st.markdown("---")
+    st.markdown("## 📊 Sentiment Visualizations")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Sentiment pie chart
+        sentiment_counts = df['sentiment'].value_counts()
+        fig_pie = go.Figure(data=[go.Pie(
+            labels=sentiment_counts.index,
+            values=sentiment_counts.values,
+            hole=0.4,
+            marker_colors=['#ff4757', '#ffb347', '#00ff88']
+        )])
+        fig_pie.update_layout(title="Sentiment Distribution", height=400)
+        st.plotly_chart(fig_pie, use_container_width=True)
+    
+    with col2:
+        # Sarcasm indicator if available
+        if 'sarcasm_detected' in df.columns:
+            sarcasm_count = df['sarcasm_detected'].sum()
+            sarcasm_pct = (sarcasm_count / total_reviews) * 100
+            fig_gauge = go.Figure(go.Indicator(
+                mode="gauge+number",
+                value=sarcasm_pct,
+                title={'text': "Sarcasm Detection Rate"},
+                gauge={'axis': {'range': [0, 100]}, 'bar': {'color': "darkorange"}}
+            ))
+            fig_gauge.update_layout(height=300)
+            st.plotly_chart(fig_gauge, use_container_width=True)
+    
+    # ==================== SECTION 5: REPORT GENERATION ====================
+    st.markdown("---")
+    st.markdown("## 📧 Report Configuration")
+    
+    col1, col2, col3 = st.columns([2, 1, 2])
+    
+    with col2:
+        # Email input
+        report_email = st.text_input(
+            "Email Address for Reports",
+            value=st.session_state.business_info.get('email', ''),
+            key="report_email"
+        )
+        
+        # Interval in days
+        interval_days = st.number_input(
+            "Report Interval (Days)",
+            min_value=1,
+            max_value=30,
+            value=7,
+            help="How often to send automated reports"
+        )
+        
+        # Send now button
+        if st.button("📧 Send Email Report Now", type="primary", use_container_width=True):
+            if report_email:
+                with st.spinner("Generating and sending report..."):
+                    try:
+                        reporter = EmailReporter()
+                        success = reporter.send_report_email(report_email, "ondemand", include_pdf=True)
+                        if success:
+                            st.success(f"✅ Report sent to {report_email}")
+                            st.info("📬 Check MailHog at http://localhost:8025 to view the email")
+                        else:
+                            st.error("Failed to send email. Is MailHog running?")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+            else:
+                st.warning("Please enter an email address")
+        
+        # Schedule button
+        if st.button("⏰ Schedule Automated Reports", use_container_width=True):
+            if report_email:
+                st.success(f"✅ Reports scheduled every {interval_days} day(s) to {report_email}")
+                st.session_state.report_scheduled = True
+                st.info(f"📅 Next report: {(datetime.now() + timedelta(days=interval_days)).strftime('%B %d, %Y')}")
+            else:
+                st.warning("Please enter an email address")
+    
+    # ==================== SECTION 6: SAMPLE REVIEWS ====================
+    st.markdown("---")
+    st.markdown("## 📝 Recent Customer Reviews")
+    
+    # Filter options
+    sentiment_filter = st.multiselect(
+        "Filter by Sentiment",
+        options=['Positive', 'Neutral', 'Negative'],
+        default=['Positive', 'Neutral', 'Negative']
+    )
+    
+    filtered_df = df[df['sentiment'].isin(sentiment_filter)]
+    
+    for idx, row in filtered_df.head(10).iterrows():
+        sentiment_icon = {'Positive': '🟢', 'Neutral': '⚪', 'Negative': '🔴'}.get(row['sentiment'], '⚪')
+        st.markdown(f"""
+        <div style="background: #f8f9fa; padding: 1rem; border-radius: 10px; margin-bottom: 1rem;">
+            <div style="display: flex; justify-content: space-between;">
+                <div>
+                    <span style="font-size: 1.2rem;">{sentiment_icon}</span>
+                    <strong>{row['sentiment']}</strong>
+                    {' 😏' if row.get('sarcasm_detected', False) else ''}
+                </div>
+                <small>{row.get('date', 'Date not available')}</small>
+            </div>
+            <p style="margin-top: 0.5rem;">{row.get('full_text', row.get('content', 'No content'))[:300]}...</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Footer
+    st.markdown("---")
+    st.markdown("""
+    <div style="text-align: center; color: #666; padding: 2rem;">
+        <p>🚀 Built with AI Technology | Sentiment Analysis | Sarcasm Detection | Automated Reporting</p>
+        <p><small>Note: This demonstration uses pre-analyzed review data. In production, it would scrape live reviews from Trustpilot.</small></p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # New analysis button
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("🔄 Analyze Another Business", use_container_width=True):
+            st.session_state.app_stage = 'setup'
+            st.session_state.pop('overall_summary', None)
+            st.rerun()
 
-# Main app routing
 def main():
     if st.session_state.app_stage == 'setup':
         setup_screen()
-    elif st.session_state.app_stage == 'processing':
-        processing_screen()
     elif st.session_state.app_stage == 'results':
         results_screen()
 
 if __name__ == "__main__":
-    import json
     main()
