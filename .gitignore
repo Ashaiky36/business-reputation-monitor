@@ -5,23 +5,24 @@ venv/
 env/
 .env
 
-# Data files (optional - commit sample data but not all)
-# *.csv
-# !sample_reviews.csv
-# *.pdf
+# Database
+users.db
+*.db
 
-# Local models (too large)
-models/
-*.bin
-*.safetensors
+# Local email data
+mailhog.db
+MailHog_windows_386.exe
 
 # IDE
 .vscode/
 .idea/
+*.swp
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Local email server data
-mailhog.exe
+# Project specific
+*.pdf
+!sample.pdf
+temp_*.py
