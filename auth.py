@@ -252,6 +252,80 @@ def login_screen():
     
     st.markdown('</div>', unsafe_allow_html=True)
 
+# def login_screen():
+#     """Display login screen"""
+    
+#     # Center the login container using Streamlit columns (more reliable than custom CSS)
+#     st.markdown("<br><br>", unsafe_allow_html=True)
+    
+#     col1, col2, col3 = st.columns([1, 2, 1])
+    
+#     with col2:
+#         # Simple white container without complex CSS
+#         st.markdown("""
+#         <div style="background-color: white; padding: 2rem; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+#         </div>
+#         """, unsafe_allow_html=True)
+        
+#         st.markdown("""
+#         <div style="text-align: center; margin-bottom: 2rem;">
+#             <h1 style="color: #667eea;">🔐 Business Reputation Monitor</h1>
+#             <p style="color: #666;">Secure Access to Your Dashboard</p>
+#         </div>
+#         """, unsafe_allow_html=True)
+        
+#         # Toggle between Login and Signup
+#         tab1, tab2 = st.tabs(["🔑 Login", "📝 Sign Up"])
+        
+#         with tab1:
+#             # Login Form
+#             email = st.text_input("Email Address", placeholder="business@example.com", key="login_email_input")
+#             password = st.text_input("Password", type="password", placeholder="Enter your password", key="login_password_input")
+            
+#             if st.button("Login", type="primary", use_container_width=True, key="login_submit_button"):
+#                 if email and password:
+#                     auth = AuthSystem()
+#                     success, message, user = auth.login(email, password)
+                    
+#                     if success:
+#                         st.session_state.authenticated = True
+#                         st.session_state.user = user
+#                         st.success(message)
+#                         st.rerun()
+#                     else:
+#                         st.error(message)
+#                 else:
+#                     st.warning("Please enter both email and password")
+            
+#             st.markdown("---")
+#             st.caption("Demo Account: demo@business.com / demo123")
+        
+#         with tab2:
+#             # Signup Form
+#             full_name = st.text_input("Full Name", placeholder="John Doe", key="signup_name_input")
+#             email = st.text_input("Email Address", placeholder="business@example.com", key="signup_email_input")
+#             password = st.text_input("Password", type="password", placeholder="Min 6 characters", key="signup_password_input")
+#             confirm_password = st.text_input("Confirm Password", type="password", placeholder="Re-enter password", key="signup_confirm_input")
+#             business_name = st.text_input("Business Name (Optional)", placeholder="Your Company Name", key="signup_business_input")
+            
+#             if st.button("Create Account", type="primary", use_container_width=True, key="signup_submit_button"):
+#                 if password != confirm_password:
+#                     st.error("Passwords do not match")
+#                 elif full_name and email and password:
+#                     auth = AuthSystem()
+#                     success, message, user_id = auth.signup(full_name, email, password, business_name)
+                    
+#                     if success:
+#                         st.success(message)
+#                         st.info("Please login with your credentials")
+#                         st.rerun()
+#                     else:
+#                         st.error(message)
+#                 else:
+#                     st.warning("Please fill in all required fields")
+    
+#     st.markdown("<br><br>", unsafe_allow_html=True)
+
 def logout():
     """Logout user"""
     st.session_state.authenticated = False
