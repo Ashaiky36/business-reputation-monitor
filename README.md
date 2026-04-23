@@ -156,7 +156,7 @@ Built with Streamlit for an interactive web UI, it's designed to be accessible t
 ### Step 1: Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/business-reputation-monitor.git
+git clone https://github.com/Ashaiky36/business-reputation-monitor.git
 cd business-reputation-monitor
 ```
 
@@ -220,7 +220,7 @@ The app will open automatically in your browser at **[http://localhost:8501](htt
 ## 🖥️ Usage
 
 1. **Sign up** for an account on the authentication page
-2. **Enter a Trustpilot URL** for the business you want to analyze (e.g., `https://www.trustpilot.com/review/example.com`)
+2. **Enter a Trustpilot URL** for the business you want to analyze (e.g., `https://www.trustpilot.com/review/www.apple.com`)
 3. Click **"Run Analysis"** — the pipeline will scrape reviews, classify sentiment, detect sarcasm, and generate insights
 4. Explore the **interactive dashboard** to review charts, flagged reviews, and AI-generated problem summaries
 5. **Download the PDF report** or configure the **email scheduler** to receive automated reports
