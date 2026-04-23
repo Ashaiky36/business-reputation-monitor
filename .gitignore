@@ -1,3 +1,32 @@
+# # Python
+# __pycache__/
+# *.pyc
+# venv/
+# env/
+# .env
+
+# # Database
+# users.db
+# *.db
+
+# # Local email data
+# mailhog.db
+# MailHog_windows_386.exe
+
+# # IDE
+# .vscode/
+# .idea/
+# *.swp
+
+# # OS
+# .DS_Store
+# Thumbs.db
+
+# # Project specific
+# *.pdf
+# !sample.pdf
+# temp_*.py
+
 # Python
 __pycache__/
 *.pyc
@@ -22,7 +51,38 @@ MailHog_windows_386.exe
 .DS_Store
 Thumbs.db
 
-# Project specific
+# Project specific - Exclude extra/unnecessary files
 *.pdf
 !sample.pdf
 temp_*.py
+
+# Exclude old/backup CSV files
+analyzed_reviews.csv
+analyzed_reviews_enhanced.csv
+negative_reviews.csv
+review_content.csv
+sampled_negative_reviews.csv
+
+# Exclude test and temporary scripts
+basic_scraper.py
+dashboard.py
+email_setup_helper.py
+extract_content.py
+llm_verify_all.py
+optimized_sentiment_analyzer.py
+sentiment_analyzer.py
+setup_demo_users.py
+test_email_system.py
+test_pdf.py
+test_sentiment.py
+
+# Exclude backup/fallback files
+insights_fallback.json
+insights_report.txt
+
+# Exclude old report files
+report_*.pdf
+business_insights_report.pdf
+
+# Exclude __pycache__ if not already covered
+__pycache__/
